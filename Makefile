@@ -49,7 +49,7 @@ $(KERNEL_ELF): $(KERNEL_OBJS)
 
 $(SHELL_BIN): $(SHELL_DIR)/shell.c
 	@mkdir -p $(BUILD_DIR)
-	$(CC) $(CFLAGS) -o $@ $<
+	$(CC) -m32 -O2 -Wall -Wextra -o $@ $<
 	@echo "Shell built: $@"
 
 # ==================== INITRD BUILD ====================
