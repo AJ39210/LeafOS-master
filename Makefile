@@ -42,7 +42,7 @@ $(BUILD_DIR)/%.o: $(KERNEL_DIR)/%.c
 	$(CC) $(CFLAGS) -c -o $@ $< -I$(KERNEL_DIR)
 
 $(KERNEL_ELF): $(KERNEL_OBJS)
-	$(LD) -T $(KERNEL_DIR)/linker.ld -o $@ $(KERNEL_OBJS)
+	$(LD) -m elf_i386 -T $(KERNEL_DIR)/linker.ld -o $@ $(KERNEL_OBJS)
 	@echo "Kernel built: $@"
 
 # ==================== SHELL BUILD ====================
