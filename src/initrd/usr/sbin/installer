@@ -1,0 +1,218 @@
+#!/bin/sh
+
+# LeafOS Installer Script
+# Text-based installer with simple dialog-like UI
+
+set -e
+
+DIALOG_OK=0
+DIALOG_CANCEL=1
+DIALOG_ESC=255
+
+# ANSI color codes
+RESET='\033[0m'
+BLUE_BG='\033[44m'
+WHITE='\033[97m'
+BOLD='\033[1m'
+REVERSE='\033[7m'
+
+# Simple dialog-like function for messages
+dialog_msgbox() {
+    local title="$1"
+    local message="$2"
+
+    clear
+    printf "${BLUE_BG}${WHITE}"
+    printf "\n"
+    printf "  %-76s\n" "┌────────────────────────────────────────────────────────────────────────────┐"
+    printf "  %-76s\n" "│ ${BOLD}${title}${RESET}${BLUE_BG}${WHITE}$(printf ' %.0s' $(seq 1 $((74 - ${#title}))))│"
+    printf "  %-76s\n" "├────────────────────────────────────────────────────────────────────────────┤"
+    printf "  │ %-74s │\n" "$message"
+    printf "  %-76s\n" "└────────────────────────────────────────────────────────────────────────────┘"
+    printf "\n  Press any key to continue..."
+    printf "${RESET}"
+    read -r _
+}
+
+# Simple dialog-like function for yes/no
+dialog_yesno() {
+    local title="$1"
+    local message="$2"
+
+    while true; do
+        clear
+        printf "${BLUE_BG}${WHITE}"
+        printf "\n"
+        printf "  %-76s\n" "┌────────────────────────────────────────────────────────────────────────────┐"
+        printf "  %-76s\n" "│ ${BOLD}${title}${RESET}${BLUE_BG}${WHITE}$(printf ' %.0s' $(seq 1 $((74 - ${#title}))))│"
+        printf "  %-76s\n" "├────────────────────────────────────────────────────────────────────────────┤"
+        printf "  │ %-74s │\n" "$message"
+        printf "  %-76s\n" "│                                                                            │"
+        printf "  %-76s\n" "│          [ YES ]                                [ NO ]                     │"
+        printf "  %-76s\n" "└────────────────────────────────────────────────────────────────────────────┘"
+        printf "\n  Enter 'y' for YES or 'n' for NO: "
+        printf "${RESET}"
+
+        read -r response
+        case "$response" in
+            y|Y) return 0 ;;
+            n|N) return 1 ;;
+        esac
+    done
+}
+
+# Simple dialog-like function for text input
+dialog_inputbox() {
+    local title="$1"
+    local prompt="$2"
+    local default="${3:-}"
+
+    clear
+    printf "${BLUE_BG}${WHITE}"
+    printf "\n"
+    printf "  %-76s\n" "┌────────────────────────────────────────────────────────────────────────────┐"
+    printf "  %-76s\n" "│ ${BOLD}${title}${RESET}${BLUE_BG}${WHITE}$(printf ' %.0s' $(seq 1 $((74 - ${#title}))))│"
+    printf "  %-76s\n" "├────────────────────────────────────────────────────────────────────────────┤"
+    printf "  │ %-74s │\n" "$prompt"
+    printf "  │ %-74s │\n" "Default: $default"
+    printf "  %-76s\n" "└────────────────────────────────────────────────────────────────────────────┘"
+    printf "\n  Input: "
+    printf "${RESET}"
+
+    read -r input
+    echo "${input:-$default}"
+}
+
+# Detect available disks
+detect_disks() {
+    ls -d /dev/sd* /dev/hd* 2>/dev/null | grep -E 'sd[a-z]$|hd[a-z]$' || true
+}
+
+# ============================================================================
+# Main Installer Flow
+# ============================================================================
+
+dialog_msgbox "LeafOS Installer" "Welcome to the LeafOS Installer. This will install LeafOS to your disk."
+
+# Detect disks
+DISKS=$(detect_disks)
+
+if [ -z "$DISKS" ]; then
+    dialog_msgbox "Error" "No disks found! Cannot proceed with installation."
+    exit 1
+fi
+
+# Simple disk selection - just list them
+clear
+printf "${BLUE_BG}${WHITE}"
+printf "\n"
+printf "  %-76s\n" "┌────────────────────────────────────────────────────────────────────────────┐"
+printf "  %-76s\n" "│ ${BOLD}Disk Selection${RESET}${BLUE_BG}${WHITE}$(printf ' %.0s' $(seq 1 $((60))))│"
+printf "  %-76s\n" "├────────────────────────────────────────────────────────────────────────────┤"
+printf "  │ Available disks:                                                     │\n"
+
+for DISK in $DISKS; do
+    SIZE=$(cat /sys/block/$(basename "$DISK")/size 2>/dev/null || echo "unknown")
+    printf "  │   %-72s │\n" "$DISK (sectors: $SIZE)"
+done
+
+printf "  %-76s\n" "└────────────────────────────────────────────────────────────────────────────┘"
+printf "${RESET}"
+printf "\n  Enter target disk device: "
+
+read -r TARGET_DISK
+
+if [ ! -b "$TARGET_DISK" ]; then
+    dialog_msgbox "Error" "Invalid disk: $TARGET_DISK"
+    exit 1
+fi
+
+# Confirm installation
+if ! dialog_yesno "Confirm Installation" "Install LeafOS to $TARGET_DISK? This will erase all data!"; then
+    dialog_msgbox "Installation Cancelled" "Installation was cancelled."
+    exit 0
+fi
+
+# Create partition table and FAT32 filesystem
+dialog_msgbox "Partitioning" "Creating partition table on $TARGET_DISK..."
+
+# Create single FAT32 partition
+(
+    echo o
+    echo n
+    echo p
+    echo 1
+    echo
+    echo
+    echo t
+    echo c
+    echo a
+    echo 1
+    echo w
+) | fdisk "$TARGET_DISK" 2>/dev/null || true
+
+sleep 1
+
+# Determine partition name
+if [ -b "${TARGET_DISK}1" ]; then
+    PARTITION="${TARGET_DISK}1"
+elif [ -b "${TARGET_DISK}p1" ]; then
+    PARTITION="${TARGET_DISK}p1"
+else
+    dialog_msgbox "Error" "Could not find partition on $TARGET_DISK"
+    exit 1
+fi
+
+# Format partition
+dialog_msgbox "Formatting" "Formatting $PARTITION as FAT32..."
+mkfs.fat -F 32 "$PARTITION" 2>/dev/null || true
+
+# Mount partition
+MOUNT_POINT="/mnt/leafos"
+mkdir -p "$MOUNT_POINT"
+mount "$PARTITION" "$MOUNT_POINT" || {
+    dialog_msgbox "Error" "Failed to mount $PARTITION"
+    exit 1
+}
+
+# Create directory structure
+dialog_msgbox "Installing" "Creating directory structure..."
+mkdir -p "$MOUNT_POINT/boot"
+mkdir -p "$MOUNT_POINT/bin"
+mkdir -p "$MOUNT_POINT/sbin"
+mkdir -p "$MOUNT_POINT/etc"
+mkdir -p "$MOUNT_POINT/dev"
+mkdir -p "$MOUNT_POINT/proc"
+mkdir -p "$MOUNT_POINT/sys"
+mkdir -p "$MOUNT_POINT/mnt"
+
+# Copy kernel (for demonstration, copy from /boot if available)
+if [ -f /boot/kernel.elf ]; then
+    cp /boot/kernel.elf "$MOUNT_POINT/boot/" || true
+fi
+
+# Copy initrd (as os_fs.cpio for the installed system)
+if [ -f /boot/os_fs.cpio ]; then
+    cp /boot/os_fs.cpio "$MOUNT_POINT/boot/" || true
+fi
+
+# Create minimal grub.cfg
+cat > "$MOUNT_POINT/boot/grub.cfg" << 'EOF'
+menuentry 'LeafOS' {
+    multiboot /boot/kernel.elf
+    module /boot/os_fs.cpio
+    boot
+}
+EOF
+
+# Install GRUB to the disk
+dialog_msgbox "Installing GRUB" "Installing GRUB bootloader..."
+grub-install --target=i386-pc --boot-directory="$MOUNT_POINT/boot" "$TARGET_DISK" 2>/dev/null || true
+
+# Unmount
+umount "$MOUNT_POINT" 2>/dev/null || true
+
+# Success
+dialog_msgbox "Installation Complete" "LeafOS has been installed to $TARGET_DISK. You may now reboot."
+
+exit 0
