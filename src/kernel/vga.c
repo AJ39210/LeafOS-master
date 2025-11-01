@@ -97,8 +97,6 @@ void vga_printf(const char *format, ...) {
             switch (*format) {
                 case 'd': {
                     int val = __builtin_va_arg(args, int);
-                    char buf[32];
-                    int i = 0;
                     if (val < 0) {
                         vga_putchar('-');
                         val = -val;
