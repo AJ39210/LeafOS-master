@@ -1,0 +1,5 @@
+# LeafOS Filesystem Table
+# Format: device  mount_point  type  options  dump  pass
+
+proc    /proc   proc    defaults    0   0
+sysfs   /sys    sysfs   defaults    0   0
